@@ -1,0 +1,17 @@
+vincere-desktop
+*.o
+*.a
+*.so
+build/
+
+keys/
+*.bin
+*.pem
+
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+extern/imgui/
