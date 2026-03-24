@@ -4,7 +4,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include "crypto_engine.hpp"
+#include "../include/crypto_engine.hpp"
 
 int main() {
     if (!glfwInit()) return 1;
