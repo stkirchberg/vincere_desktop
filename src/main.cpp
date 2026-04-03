@@ -1,203 +1,220 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <map>
 #include <algorithm>
-#include <ctime>
 #include <GLFW/glfw3.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include "../include/crypto_engine.hpp"
+
+struct Character {
+    unsigned int TextureID;
+    float SizeX, SizeY;
+    float BearingX, BearingY;
+    unsigned int Advance;
+};
 
 struct Message {
     std::string sender;
-    float width;
-    float height;
+    std::string text;
     bool isSelf;
-    float r, g, b;
 };
 
 struct Chat {
     std::string name;
-    std::string subtitle;
     std::vector<Message> messages;
     std::vector<std::string> members;
-    float scrollOffset;
 };
 
 class VincereApp {
 public:
-    int screenW, screenH;
-    int activeChatIdx = 0;
-    std::vector<Chat> chatList;
-    float sidebarWidth = 280.0f;
-    float infoWidth = 200.0f;
-    bool isDraggingSidebar = false;
-    double lastKeyTime = 0;
+    std::map<char, Character> Characters;
+    float sbW = 260.0f;
+    float infoW = 180.0f;
+    int activeChat = 0;
+    bool resizing = false;
+    int sw, sh;
+    std::vector<Chat> chats;
+    double lastInput = 0;
 
     VincereApp() {
-        srand(static_cast<unsigned int>(time(0)));
-        initData();
+        setupData();
     }
 
-    void initData() {
-        Chat team;
-        team.name = "Vincere Team";
-        team.subtitle = "vincere-team";
-        team.scrollOffset = 0;
-        team.members = {"stk", "neo", "paul", "ivan", "wolf", "salt", "anton", "petra"};
-        team.messages.push_back({"neo", 320.0f, 60.0f, false, 0.92f, 0.92f, 0.94f});
-        team.messages.push_back({"paul", 280.0f, 60.0f, false, 0.92f, 0.92f, 0.94f});
-        team.messages.push_back({"ivan", 380.0f, 80.0f, false, 0.92f, 0.92f, 0.94f});
+    void setupData() {
+        Chat team = {"Vincere Team", {}, {"stk", "neo", "paul", "ivan", "wolf", "salt", "anton", "petra"}};
+        team.messages.push_back({"neo", "What we should do is having much more servers!", false});
+        team.messages.push_back({"stk", "Plan and show your result.", true});
+        team.messages.push_back({"paul", "The database is ready for the migration.", false});
+        team.messages.push_back({"ivan", "I will check the logs tonight.", false});
+        chats.push_back(team);
         
-        Chat privateNeo;
-        privateNeo.name = "neo";
-        privateNeo.subtitle = "direct message";
-        privateNeo.scrollOffset = 0;
-        privateNeo.members = {"stk", "neo"};
-        
-        chatList.push_back(team);
-        chatList.push_back(privateNeo);
-        chatList.push_back({"Public Room", "global", {}, {"all_users"}, 0});
-        chatList.push_back({"Monero Fans", "xmr-community", {}, {"crypto_maniac"}, 0});
-        chatList.push_back({"Development", "internal", {}, {"stk", "dev_bot"}, 0});
+        Chat privateNeo = {"neo", {}, {"stk", "neo"}};
+        privateNeo.messages.push_back({"neo", "Are the keys safe?", false});
+        privateNeo.messages.push_back({"stk", "Yes, AES-256 is active.", true});
+        chats.push_back(privateNeo);
+
+        chats.push_back({"Public Room", {{"System", "Welcome to the hub.", false}}, {"all"}});
+        chats.push_back({"Monero Fans", {}, {"xmr_king", "privacy_dev"}});
+        chats.push_back({"Dev Channel", {{"ivan", "Build is failing on Arch.", false}}, {"ivan", "stk"}});
+        chats.push_back({"Security", {{"Admin", "Patching now.", false}}, {"admin_01"}});
+        chats.push_back({"Offtopic", {}, {"everyone"}});
+        chats.push_back({"Archive", {}, {"system"}});
     }
 
-    void drawQuad(float x, float y, float w, float h, float r, float g, float b, bool filled = true) {
-        float nx = (2.0f * x) / screenW - 1.0f;
-        float ny = 1.0f - (2.0f * y) / screenH;
-        float nw = (2.0f * w) / screenW;
-        float nh = (2.0f * h) / screenH;
+    void initFonts() {
+        FT_Library ft;
+        if (FT_Init_FreeType(&ft)) return;
+        FT_Face face;
+        if (FT_New_Face(ft, "/usr/share/fonts/TTF/DejaVuSans.ttf", 0, &face)) return;
+        FT_Set_Pixel_Sizes(face, 0, 13);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        for (unsigned char c = 0; c < 128; c++) {
+            if (FT_Load_Char(face, c, FT_LOAD_RENDER)) continue;
+            unsigned int texture;
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, face->glyph->bitmap.width, face->glyph->bitmap.rows, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            Character character = { texture, (float)face->glyph->bitmap.width, (float)face->glyph->bitmap.rows, (float)face->glyph->bitmap_left, (float)face->glyph->bitmap_top, (unsigned int)face->glyph->advance.x };
+            Characters.insert(std::pair<char, Character>(c, character));
+        }
+        FT_Done_Face(face);
+        FT_Done_FreeType(ft);
+    }
 
-        if (filled) glBegin(GL_QUADS);
-        else glBegin(GL_LINE_LOOP);
-        
+    void drawText(std::string text, float x, float y, float r, float g, float b) {
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glColor3f(r, g, b);
-        glVertex2f(nx, ny);
-        glVertex2f(nx + nw, ny);
-        glVertex2f(nx + nw, ny - nh);
-        glVertex2f(nx, ny - nh);
+        float tempX = (2.0f * x) / sw - 1.0f;
+        float tempY = 1.0f - (2.0f * y) / sh;
+        for (char c : text) {
+            Character ch = Characters[c];
+            float xpos = tempX + (ch.BearingX / sw) * 2.0f;
+            float ypos = tempY - ((ch.SizeY - ch.BearingY) / sh) * 2.0f;
+            float w = (ch.SizeX / sw) * 2.0f;
+            float h = (ch.SizeY / sh) * 2.0f;
+            glBindTexture(GL_TEXTURE_2D, ch.TextureID);
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex2f(xpos, ypos + h);
+            glTexCoord2f(1, 0); glVertex2f(xpos + w, ypos + h);
+            glTexCoord2f(1, 1); glVertex2f(xpos + w, ypos);
+            glTexCoord2f(0, 1); glVertex2f(xpos, ypos);
+            glEnd();
+            tempX += (ch.Advance >> 6) * 2.0f / sw;
+        }
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_BLEND);
+    }
+
+    void drawRect(float x, float y, float w, float h, float r, float g, float b, bool fill = true) {
+        float nx = (2.0f * x) / sw - 1.0f;
+        float ny = 1.0f - (2.0f * y) / sh;
+        float nw = (2.0f * w) / sw;
+        float nh = (2.0f * h) / sh;
+        glBegin(fill ? GL_QUADS : GL_LINE_LOOP);
+        glColor3f(r, g, b);
+        glVertex2f(nx, ny); glVertex2f(nx + nw, ny);
+        glVertex2f(nx + nw, ny - nh); glVertex2f(nx, ny - nh);
         glEnd();
     }
 
-    void handleEvents(GLFWwindow* window) {
-        double currentTime = glfwGetTime();
-        double mouseX, mouseY;
-        glfwGetCursorPos(window, &mouseX, &mouseY);
-
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            if (std::abs(mouseX - sidebarWidth) < 10.0) isDraggingSidebar = true;
+    void update(GLFWwindow* window) {
+        glfwGetFramebufferSize(window, &sw, &sh);
+        double mx, my;
+        glfwGetCursorPos(window, &mx, &my);
+        bool over = (std::abs(mx - sbW) < 10.0);
+        if (over || resizing) {
+            glfwSetCursor(window, glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR));
         } else {
-            isDraggingSidebar = false;
+            glfwSetCursor(window, NULL);
         }
-
-        if (isDraggingSidebar) {
-            sidebarWidth = static_cast<float>(mouseX);
-            if (sidebarWidth < 150.0f) sidebarWidth = 150.0f;
-            if (sidebarWidth > 500.0f) sidebarWidth = 500.0f;
-        }
-
-        if (currentTime - lastKeyTime > 0.15) {
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && over) resizing = true;
+        else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) resizing = false;
+        if (resizing) sbW = std::clamp((float)mx, 150.0f, 600.0f);
+        double now = glfwGetTime();
+        if (now - lastInput > 0.2) {
             if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-                activeChatIdx = (activeChatIdx + 1) % chatList.size();
-                lastKeyTime = currentTime;
+                activeChat = (activeChat + 1) % chats.size();
+                lastInput = now;
             }
             if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-                activeChatIdx = (activeChatIdx - 1 + (int)chatList.size()) % (int)chatList.size();
-                lastKeyTime = currentTime;
-            }
-            if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
-                float rndW = 150.0f + (rand() % 300);
-                chatList[activeChatIdx].messages.push_back({"stk", rndW, 50.0f, true, 0.0f, 0.48f, 1.0f});
-                lastKeyTime = currentTime;
+                activeChat = (activeChat - 1 + (int)chats.size()) % (int)chats.size();
+                lastInput = now;
             }
         }
     }
 
-    void render(GLFWwindow* window) {
-        glfwGetFramebufferSize(window, &screenW, &screenH);
-        glViewport(0, 0, screenW, screenH);
-        glClearColor(0.98f, 0.98f, 0.99f, 1.0f);
+    void render() {
+        glViewport(0, 0, sw, sh);
+        glClearColor(0.98f, 0.98f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        float centerW = screenW - sidebarWidth - infoWidth;
-
-        drawQuad(0, 0, sidebarWidth, screenH, 1.0f, 1.0f, 1.0f);
-        drawQuad(sidebarWidth, 0, 1, screenH, 0.88f, 0.88f, 0.90f);
-
-        float btnY = 20.0f;
-        for (int i = 0; i < 3; ++i) {
-            drawQuad(20, btnY, sidebarWidth - 40, 45, 0.96f, 0.96f, 0.98f);
-            drawQuad(20, btnY, sidebarWidth - 40, 45, 0.80f, 0.80f, 0.85f, false);
-            btnY += 55.0f;
+        float chatW = sw - sbW - infoW;
+        drawRect(0, 0, sbW, sh, 1.0f, 1.0f, 1.0f);
+        drawRect(sbW, 0, 1, sh, 0.85f, 0.85f, 0.85f);
+        for(int i = 0; i < 3; ++i) {
+            drawRect(20, 20 + i * 50, sbW - 40, 40, 0.95f, 0.96f, 0.98f);
+            drawRect(20, 20 + i * 50, sbW - 40, 40, 0.82f, 0.82f, 0.85f, false);
+            drawText("Action", 35, 45 + i * 50, 0.5f, 0.5f, 0.6f);
         }
-
-        btnY += 25.0f;
-        for (int i = 0; i < chatList.size(); ++i) {
-            if (i == activeChatIdx) {
-                drawQuad(0, btnY, sidebarWidth, 65, 0.93f, 0.96f, 1.0f);
-                drawQuad(0, btnY, 4, 65, 0.0f, 0.5f, 1.0f);
+        float cY = 190;
+        for(int i = 0; i < (int)chats.size(); ++i) {
+            if(i == activeChat) {
+                drawRect(0, cY, sbW, 60, 0.92f, 0.95f, 1.0f);
+                drawRect(0, cY, 5, 60, 0.0f, 0.5f, 1.0f);
             }
-            drawQuad(15, btnY + 12, 40, 40, 0.85f, 0.85f, 0.88f);
-            drawQuad(15, btnY + 12, 40, 40, 0.75f, 0.75f, 0.75f, false);
-            btnY += 66.0f;
+            drawRect(15, cY + 10, 40, 40, 0.88f, 0.88f, 0.92f);
+            drawText(chats[i].name, 65, cY + 35, 0.2f, 0.2f, 0.2f);
+            cY += 62;
         }
-
-        float headX = sidebarWidth + 1;
-        drawQuad(headX, 0, centerW, 70, 1.0f, 1.0f, 1.0f);
-        drawQuad(headX, 70, centerW, 1, 0.88f, 0.88f, 0.90f);
-        drawQuad(headX + 20, 15, 40, 40, 0.9f, 0.9f, 0.9f);
-
-        float msgY = 100.0f;
-        for (auto& m : chatList[activeChatIdx].messages) {
-            float msgX = m.isSelf ? (sidebarWidth + centerW - m.width - 20) : (sidebarWidth + 20);
-            drawQuad(msgX, msgY, m.width, m.height, m.r, m.g, m.b);
-            drawQuad(msgX, msgY, m.width, m.height, 0.82f, 0.82f, 0.85f, false);
-            msgY += m.height + 15.0f;
+        drawRect(sbW + 1, 0, chatW, 65, 1.0f, 1.0f, 1.0f);
+        drawRect(sbW + 1, 65, chatW, 1, 0.85f, 0.85f, 0.85f);
+        drawText(chats[activeChat].name, sbW + 30, 40, 0.1f, 0.1f, 0.1f);
+        float mY = 100;
+        for(auto& m : chats[activeChat].messages) {
+            float mX = m.isSelf ? (sbW + chatW - 320) : (sbW + 25);
+            drawRect(mX, mY, 300, 55, m.isSelf ? 0.0f : 0.94f, m.isSelf ? 0.52f : 0.94f, m.isSelf ? 1.0f : 0.98f);
+            drawRect(mX, mY, 300, 55, 0.85f, 0.85f, 0.88f, false);
+            drawText(m.text, mX + 15, mY + 32, m.isSelf ? 1.0f : 0.2f, m.isSelf ? 1.0f : 0.2f, m.isSelf ? 1.0f : 0.2f);
+            mY += 70;
         }
-
-        float inputY = screenH - 70.0f;
-        drawQuad(sidebarWidth + 1, inputY, centerW, 70, 1.0f, 1.0f, 1.0f);
-        drawQuad(sidebarWidth + 20, inputY + 15, centerW - 120, 40, 0.97f, 0.97f, 0.98f);
-        drawQuad(sidebarWidth + 20, inputY + 15, centerW - 120, 40, 0.75f, 0.75f, 0.75f, false);
-        drawQuad(sidebarWidth + centerW - 80, inputY + 15, 60, 40, 0.0f, 0.48f, 1.0f);
-
-        float rX = sidebarWidth + centerW;
-        drawQuad(rX, 0, infoWidth, screenH, 0.98f, 0.98f, 1.0f);
-        drawQuad(rX, 0, 1, screenH, 0.88f, 0.88f, 0.90f);
-
-        float memY = 85.0f;
-        for (int i = 0; i < chatList[activeChatIdx].members.size(); ++i) {
-            drawQuad(rX + 20, memY, 10, 10, 0.45f, 0.85f, 0.45f);
-            memY += 28.0f;
+        drawRect(sbW + 20, sh - 65, chatW - 40, 45, 1.0f, 1.0f, 1.0f);
+        drawRect(sbW + 20, sh - 65, chatW - 40, 45, 0.8f, 0.8f, 0.8f, false);
+        drawText("Write a message...", sbW + 40, sh - 38, 0.6f, 0.6f, 0.6f);
+        float rX = sbW + chatW;
+        drawRect(rX, 0, infoW, sh, 0.99f, 0.99f, 1.0f);
+        drawRect(rX, 0, 1, sh, 0.85f, 0.85f, 0.85f);
+        drawText("PARTICIPANTS", rX + 20, 40, 0.4f, 0.4f, 0.5f);
+        float memY = 85;
+        for(auto& mem : chats[activeChat].members) {
+            drawRect(rX + 20, memY, 10, 10, 0.45f, 0.85f, 0.45f);
+            drawText(mem, rX + 40, memY + 10, 0.3f, 0.3f, 0.3f);
+            memY += 30;
         }
     }
 };
 
 int main() {
     if (!glfwInit()) return -1;
-    
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-    
     GLFWwindow* window = glfwCreateWindow(1280, 800, "Vincere Desktop", NULL, NULL);
-    if (!window) {
-        glfwTerminate();
-        return -1;
-    }
-    
+    if (!window) return -1;
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
-
     Vincere::CryptoEngine crypto;
     VincereApp app;
-
+    app.initFonts();
     while (!glfwWindowShouldClose(window)) {
-        app.handleEvents(window);
-        app.render(window);
-        
+        app.update(window);
+        app.render();
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
-    glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
 }
