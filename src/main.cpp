@@ -38,6 +38,7 @@ public:
     int sw, sh;
     int activeIdx = 0;
     bool isResizing = false;
+    bool inputActive = false;
     std::vector<Chat> chats;
     std::string inputBuffer = "";
     Vincere::CryptoEngine crypto;
@@ -53,6 +54,9 @@ public:
         chats.push_back({"Monero Fans", "xmr-crypto", {}, {"anon", "whale"}, "stk"});
         chats.push_back({"Dev Channel", "dev-vincere", {}, {"stk", "ivan"}, "ivan"});
         chats.push_back({"Security Hub", "sec-ops", {}, {"wolf", "salt"}, "wolf"});
+        chats.push_back({"Network Stats", "bot-logs", {}, {"bot_1", "bot_2"}, "admin"});
+        chats.push_back({"Hardware-Talk", "hw-general", {}, {"stk", "wolf"}, "wolf"});
+        chats.push_back({"Coffee-Corner", "random", {}, {"everyone"}, "system"});
     }
 
     void initFonts() {
@@ -121,28 +125,47 @@ public:
         glfwGetFramebufferSize(window, &sw, &sh);
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
-        bool over = (std::abs(mx - sbW) < 8.0);
-        if (over || isResizing) glfwSetCursor(window, glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR));
+        bool overRes = (std::abs(mx - sbW) < 8.0);
+        float chatW = sw - sbW - infoW;
+        bool overIn = (mx > sbW + 35 && mx < sbW + 35 + chatW - 70 && my > sh - 75 && my < sh - 25);
+        if (overRes || isResizing) glfwSetCursor(window, glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR));
+        else if (overIn) glfwSetCursor(window, glfwCreateStandardCursor(GLFW_IBEAM_CURSOR));
         else glfwSetCursor(window, NULL);
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && over) isResizing = true;
-        else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) isResizing = false;
-        if (isResizing) sbW = std::clamp((float)mx, 180.0f, 500.0f);
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            if (overRes) isResizing = true;
+            inputActive = overIn;
+            if (mx < sbW && my > 200) {
+                int clicked = (int)((my - 205) / 45);
+                if (clicked >= 0 && clicked < (int)chats.size()) activeIdx = clicked;
+            }
+        } else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) isResizing = false;
+        if (isResizing) sbW = std::clamp((float)mx, 180.0f, 550.0f);
+    }
+
+    void handleKey(int key, int action) {
+        if (!inputActive) return;
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            if (key == GLFW_KEY_BACKSPACE && !inputBuffer.empty()) inputBuffer.pop_back();
+            else if (key == GLFW_KEY_ENTER && !inputBuffer.empty()) {
+                Message m; m.sender = "stk"; m.text = inputBuffer; m.isSelf = true;
+                m.cachedWidth = calculateTextWidth(inputBuffer);
+                chats[activeIdx].messages.push_back(m);
+                inputBuffer.clear();
+            }
+        }
     }
 
     void render() {
         glViewport(0, 0, sw, sh);
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f); glClear(GL_COLOR_BUFFER_BIT);
         float chatW = sw - sbW - infoW;
-
         drawRect(0, 0, sbW, sh, 0.98f, 0.98f, 0.99f);
         drawRect(sbW, 0, 1, sh, 0.1f, 0.1f, 0.1f);
-
         std::string btns[] = {"Join public room", "create or join", "start chat"};
         for (int i = 0; i < 3; ++i) {
             drawRect(25, 25 + i * 45, sbW - 50, 35, 0.1f, 0.1f, 0.1f, 1.0f, false);
             drawText(btns[i], 40, 48 + i * 45, 0.1f, 0.1f, 0.1f);
         }
-
         drawText("Last conversations:", 25, 175, 0.2f, 0.2f, 0.2f);
         float cY = 205;
         for (int i = 0; i < (int)chats.size(); ++i) {
@@ -151,28 +174,23 @@ public:
             drawText(chats[i].name, 55, cY + 12, 0.1f, 0.1f, 0.1f);
             cY += 45;
         }
-
         drawRect(sbW + 1, 0, chatW, 90, 1.0f, 1.0f, 1.0f);
         drawRect(sbW + 30, 20, 50, 50, 0.1f, 0.1f, 0.1f, 1.0f, false);
         drawText(chats[activeIdx].name, sbW + 100, 45, 0.1f, 0.1f, 0.1f, 1.4f);
         drawText(chats[activeIdx].sub, sbW + 100, 68, 0.4f, 0.4f, 0.4f);
         drawRect(sbW + 1, 90, chatW, 1, 0.1f, 0.1f, 0.1f);
-
         float mY = 135;
         for (auto& m : chats[activeIdx].messages) {
-            float bW = std::max(m.cachedWidth + 35.0f, 80.0f);
-            float bH = 55;
+            float bW = std::max(m.cachedWidth + 35.0f, 80.0f), bH = 55;
             float mX = m.isSelf ? (sbW + chatW - bW - 40) : (sbW + 40);
             drawText(m.sender, mX, mY - 12, 0.3f, 0.3f, 0.3f, 0.85f);
             drawRect(mX, mY, bW, bH, 0.1f, 0.1f, 0.1f, 1.0f, false);
-            drawText(m.text, mX + 18, mY + 34, 0.1f, 0.1f, 0.1f);
+            drawText(m.text, mX + 15, mY + 34, 0.1f, 0.1f, 0.1f);
             mY += 95;
         }
-
-        drawRect(sbW + 35, sh - 75, chatW - 70, 50, 0.1f, 0.1f, 0.1f, 1.0f, false);
-        std::string out = inputBuffer.empty() ? "Write a message..." : inputBuffer;
-        drawText(out, sbW + 55, sh - 42, 0.3f, 0.3f, 0.3f);
-
+        drawRect(sbW + 35, sh - 75, chatW - 70, 50, 0.1f, 0.1f, 0.1f, inputActive ? 1.0f : 0.6f, false);
+        std::string out = (inputBuffer.empty() && !inputActive) ? "Write a message..." : inputBuffer;
+        drawText(out, sbW + 55, sh - 42, 0.2f, 0.2f, 0.2f);
         float rX = sbW + chatW;
         drawRect(rX, 0, 1, sh, 0.1f, 0.1f, 0.1f);
         drawText("Admin:", rX + 25, 45, 0.1f, 0.1f, 0.1f, 1.25f);
@@ -185,20 +203,10 @@ public:
             memY += 32;
         }
     }
-
-    void handleKey(int key, int action) {
-        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-            if (key == GLFW_KEY_BACKSPACE && !inputBuffer.empty()) inputBuffer.pop_back();
-            else if (key == GLFW_KEY_ENTER && !inputBuffer.empty()) {
-                chats[activeIdx].messages.push_back({"stk", inputBuffer, true, calculateTextWidth(inputBuffer)});
-                inputBuffer = "";
-            }
-        }
-    }
 };
 
 VincereEngine* gE = nullptr;
-void c_cb(GLFWwindow* w, unsigned int c) { if(c < 128) gE->inputBuffer += (char)c; }
+void c_cb(GLFWwindow* w, unsigned int c) { if(gE->inputActive && c < 128) gE->inputBuffer += (char)c; }
 void k_cb(GLFWwindow* w, int k, int s, int a, int m) { gE->handleKey(k, a); }
 
 int main() {
