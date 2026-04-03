@@ -44,7 +44,7 @@ public:
     Vincere::CryptoEngine crypto;
 
     VincereEngine() {
-        Chat team = {"Vincere Team", "vincere-team", {}, {"neo", "paul", "ivan", "wolf", "salt", "anton", "petra"}, "stk"};
+        Chat team = {"Vincere Team", "vincere-team", {}, {"neo", "paul", "ivan", "wolf", "kolya", "anton", "petro"}, "stk"};
         team.messages.push_back({"neo", "What we should do is having much more servers! Ours are overloaded.", false, 0});
         team.messages.push_back({"paul", "Agree. But there's one huge problem: We don't have enough money.", false, 0});
         team.messages.push_back({"stk", "So.. Don't talk. Plan and show your result.", true, 0});
@@ -161,7 +161,7 @@ public:
         float chatW = sw - sbW - infoW;
         drawRect(0, 0, sbW, sh, 0.98f, 0.98f, 0.99f);
         drawRect(sbW, 0, 1, sh, 0.1f, 0.1f, 0.1f);
-        std::string btns[] = {"Join public room", "create or join", "start chat"};
+        std::string btns[] = {"Join public room", "create or join room", "start or join chat"};
         for (int i = 0; i < 3; ++i) {
             drawRect(25, 25 + i * 45, sbW - 50, 35, 0.1f, 0.1f, 0.1f, 1.0f, false);
             drawText(btns[i], 40, 48 + i * 45, 0.1f, 0.1f, 0.1f);
