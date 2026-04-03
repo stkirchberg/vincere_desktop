@@ -3,33 +3,19 @@ project(vincere_desktop)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLFW REQUIRED glfw3)
+set(OpenGL_GL_PREFERENCE GLVND)
+
 find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
 
-include_directories(
-    include
-    extern/imgui
-    extern/imgui/backends
-    ${GLFW_INCLUDE_DIRS}
-)
-
-set(SOURCES
-    src/main.cpp
+set(SOURCES 
+    src/main.cpp 
     src/crypto_engine.cpp
-    extern/imgui/imgui.cpp
-    extern/imgui/imgui_draw.cpp
-    extern/imgui/imgui_widgets.cpp
-    extern/imgui/imgui_tables.cpp
-    extern/imgui/imgui_demo.cpp
-    extern/imgui/backends/imgui_impl_glfw.cpp
-    extern/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 add_executable(vincere_desktop ${SOURCES})
 
 target_link_libraries(vincere_desktop 
-    ${GLFW_LIBRARIES} 
-    ${OPENGL_LIBRARIES} 
-    dl
+    glfw 
+    OpenGL::GL
 )
