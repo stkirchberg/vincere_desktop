@@ -9,6 +9,7 @@
 struct Message {
     std::string sender;
     float width;
+    float height;
     bool isSelf;
     float r, g, b;
 };
@@ -18,44 +19,52 @@ struct Chat {
     std::string subtitle;
     std::vector<Message> messages;
     std::vector<std::string> members;
+    float scrollOffset;
 };
 
-class VincereEngine {
+class VincereApp {
 public:
-    int w, h;
-    int activeIdx = 0;
+    int screenW, screenH;
+    int activeChatIdx = 0;
     std::vector<Chat> chatList;
-    bool keyLock = false;
+    float sidebarWidth = 280.0f;
+    float infoWidth = 200.0f;
+    bool isDraggingSidebar = false;
+    double lastKeyTime = 0;
 
-    VincereEngine() {
-        srand(time(0));
-        setupData();
+    VincereApp() {
+        srand(static_cast<unsigned int>(time(0)));
+        initData();
     }
 
-    void setupData() {
+    void initData() {
         Chat team;
         team.name = "Vincere Team";
         team.subtitle = "vincere-team";
+        team.scrollOffset = 0;
         team.members = {"stk", "neo", "paul", "ivan", "wolf", "salt", "anton", "petra"};
-        team.messages.push_back({"neo", 300.0f, false, 0.9f, 0.9f, 0.95f});
-        team.messages.push_back({"paul", 250.0f, false, 0.9f, 0.9f, 0.95f});
+        team.messages.push_back({"neo", 320.0f, 60.0f, false, 0.92f, 0.92f, 0.94f});
+        team.messages.push_back({"paul", 280.0f, 60.0f, false, 0.92f, 0.92f, 0.94f});
+        team.messages.push_back({"ivan", 380.0f, 80.0f, false, 0.92f, 0.92f, 0.94f});
         
-        Chat neo;
-        neo.name = "neo";
-        neo.subtitle = "private chat";
-        neo.members = {"stk", "neo"};
+        Chat privateNeo;
+        privateNeo.name = "neo";
+        privateNeo.subtitle = "direct message";
+        privateNeo.scrollOffset = 0;
+        privateNeo.members = {"stk", "neo"};
         
         chatList.push_back(team);
-        chatList.push_back(neo);
-        chatList.push_back({"Public Room", "global", {}, {"everyone"}});
-        chatList.push_back({"Monero Fans", "xmr-community", {}, {"crypto-maniac"}});
+        chatList.push_back(privateNeo);
+        chatList.push_back({"Public Room", "global", {}, {"all_users"}, 0});
+        chatList.push_back({"Monero Fans", "xmr-community", {}, {"crypto_maniac"}, 0});
+        chatList.push_back({"Development", "internal", {}, {"stk", "dev_bot"}, 0});
     }
 
-    void drawBox(float x, float y, float width, float height, float r, float g, float b, bool filled = true) {
-        float nx = (2.0f * x) / w - 1.0f;
-        float ny = 1.0f - (2.0f * y) / h;
-        float nw = (2.0f * width) / w;
-        float nh = (2.0f * height) / h;
+    void drawQuad(float x, float y, float w, float h, float r, float g, float b, bool filled = true) {
+        float nx = (2.0f * x) / screenW - 1.0f;
+        float ny = 1.0f - (2.0f * y) / screenH;
+        float nw = (2.0f * w) / screenW;
+        float nh = (2.0f * h) / screenH;
 
         if (filled) glBegin(GL_QUADS);
         else glBegin(GL_LINE_LOOP);
@@ -68,97 +77,127 @@ public:
         glEnd();
     }
 
-    void render(GLFWwindow* window) {
-        glfwGetFramebufferSize(window, &w, &h);
-        glViewport(0, 0, w, h);
-        glClearColor(0.98f, 0.98f, 0.99f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+    void handleEvents(GLFWwindow* window) {
+        double currentTime = glfwGetTime();
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
 
-        float sideW = 280.0f;
-        float infoW = 180.0f;
-        float centerW = w - sideW - infoW;
-
-        drawBox(0, 0, sideW, h, 1.0f, 1.0f, 1.0f);
-        drawBox(sideW, 0, 1, h, 0.85f, 0.85f, 0.85f);
-
-        float btnY = 20.0f;
-        for(int i = 0; i < 3; ++i) {
-            drawBox(20, btnY, sideW - 40, 45, 0.95f, 0.95f, 0.97f);
-            drawBox(20, btnY, sideW - 40, 45, 0.7f, 0.7f, 0.7f, false);
-            btnY += 55.0f;
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            if (std::abs(mouseX - sidebarWidth) < 10.0) isDraggingSidebar = true;
+        } else {
+            isDraggingSidebar = false;
         }
 
-        btnY += 20.0f;
-        for(int i = 0; i < chatList.size(); ++i) {
-            if(i == activeIdx) {
-                drawBox(0, btnY, sideW, 60, 0.92f, 0.95f, 1.0f);
-                drawBox(0, btnY, 4, 60, 0.0f, 0.5f, 1.0f);
+        if (isDraggingSidebar) {
+            sidebarWidth = static_cast<float>(mouseX);
+            if (sidebarWidth < 150.0f) sidebarWidth = 150.0f;
+            if (sidebarWidth > 500.0f) sidebarWidth = 500.0f;
+        }
+
+        if (currentTime - lastKeyTime > 0.15) {
+            if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+                activeChatIdx = (activeChatIdx + 1) % chatList.size();
+                lastKeyTime = currentTime;
             }
-            drawBox(15, btnY + 15, 30, 30, 0.8f, 0.8f, 0.85f);
-            btnY += 61.0f;
-        }
-
-        drawBox(sideW + 1, 0, centerW, 65, 1.0f, 1.0f, 1.0f);
-        drawBox(sideW + 1, 65, centerW, 1, 0.85f, 0.85f, 0.85f);
-
-        float mY = 100.0f;
-        for(auto& m : chatList[activeIdx].messages) {
-            float mX = m.isSelf ? (sideW + centerW - m.width - 20) : (sideW + 20);
-            drawBox(mX, mY, m.width, 50, m.r, m.g, m.b);
-            drawBox(mX, mY, m.width, 50, 0.8f, 0.8f, 0.8f, false);
-            mY += 65.0f;
-        }
-
-        drawBox(sideW + 20, h - 60, centerW - 40, 45, 1.0f, 1.0f, 1.0f);
-        drawBox(sideW + 20, h - 60, centerW - 40, 45, 0.7f, 0.7f, 0.7f, false);
-
-        float rX = sideW + centerW;
-        drawBox(rX, 0, infoW, h, 0.98f, 0.98f, 1.0f);
-        drawBox(rX, 0, 1, h, 0.85f, 0.85f, 0.85f);
-
-        float memY = 80.0f;
-        for(int i = 0; i < chatList[activeIdx].members.size(); ++i) {
-            drawBox(rX + 20, memY, 8, 8, 0.4f, 0.8f, 0.4f);
-            memY += 25.0f;
+            if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+                activeChatIdx = (activeChatIdx - 1 + (int)chatList.size()) % (int)chatList.size();
+                lastKeyTime = currentTime;
+            }
+            if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+                float rndW = 150.0f + (rand() % 300);
+                chatList[activeChatIdx].messages.push_back({"stk", rndW, 50.0f, true, 0.0f, 0.48f, 1.0f});
+                lastKeyTime = currentTime;
+            }
         }
     }
 
-    void update(GLFWwindow* window) {
-        if(glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS && !keyLock) {
-            float len = 100.0f + (rand() % 250);
-            chatList[activeIdx].messages.push_back({"stk", len, true, 0.0f, 0.5f, 1.0f});
-            keyLock = true;
-        }
-        if(glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_RELEASE) keyLock = false;
+    void render(GLFWwindow* window) {
+        glfwGetFramebufferSize(window, &screenW, &screenH);
+        glViewport(0, 0, screenW, screenH);
+        glClearColor(0.98f, 0.98f, 0.99f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
 
-        if(glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-            activeIdx = (activeIdx + 1) % chatList.size();
-            glfwWaitEventsTimeout(0.15);
+        float centerW = screenW - sidebarWidth - infoWidth;
+
+        drawQuad(0, 0, sidebarWidth, screenH, 1.0f, 1.0f, 1.0f);
+        drawQuad(sidebarWidth, 0, 1, screenH, 0.88f, 0.88f, 0.90f);
+
+        float btnY = 20.0f;
+        for (int i = 0; i < 3; ++i) {
+            drawQuad(20, btnY, sidebarWidth - 40, 45, 0.96f, 0.96f, 0.98f);
+            drawQuad(20, btnY, sidebarWidth - 40, 45, 0.80f, 0.80f, 0.85f, false);
+            btnY += 55.0f;
         }
-        if(glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-            activeIdx = (activeIdx - 1 + chatList.size()) % chatList.size();
-            glfwWaitEventsTimeout(0.15);
+
+        btnY += 25.0f;
+        for (int i = 0; i < chatList.size(); ++i) {
+            if (i == activeChatIdx) {
+                drawQuad(0, btnY, sidebarWidth, 65, 0.93f, 0.96f, 1.0f);
+                drawQuad(0, btnY, 4, 65, 0.0f, 0.5f, 1.0f);
+            }
+            drawQuad(15, btnY + 12, 40, 40, 0.85f, 0.85f, 0.88f);
+            drawQuad(15, btnY + 12, 40, 40, 0.75f, 0.75f, 0.75f, false);
+            btnY += 66.0f;
+        }
+
+        float headX = sidebarWidth + 1;
+        drawQuad(headX, 0, centerW, 70, 1.0f, 1.0f, 1.0f);
+        drawQuad(headX, 70, centerW, 1, 0.88f, 0.88f, 0.90f);
+        drawQuad(headX + 20, 15, 40, 40, 0.9f, 0.9f, 0.9f);
+
+        float msgY = 100.0f;
+        for (auto& m : chatList[activeChatIdx].messages) {
+            float msgX = m.isSelf ? (sidebarWidth + centerW - m.width - 20) : (sidebarWidth + 20);
+            drawQuad(msgX, msgY, m.width, m.height, m.r, m.g, m.b);
+            drawQuad(msgX, msgY, m.width, m.height, 0.82f, 0.82f, 0.85f, false);
+            msgY += m.height + 15.0f;
+        }
+
+        float inputY = screenH - 70.0f;
+        drawQuad(sidebarWidth + 1, inputY, centerW, 70, 1.0f, 1.0f, 1.0f);
+        drawQuad(sidebarWidth + 20, inputY + 15, centerW - 120, 40, 0.97f, 0.97f, 0.98f);
+        drawQuad(sidebarWidth + 20, inputY + 15, centerW - 120, 40, 0.75f, 0.75f, 0.75f, false);
+        drawQuad(sidebarWidth + centerW - 80, inputY + 15, 60, 40, 0.0f, 0.48f, 1.0f);
+
+        float rX = sidebarWidth + centerW;
+        drawQuad(rX, 0, infoWidth, screenH, 0.98f, 0.98f, 1.0f);
+        drawQuad(rX, 0, 1, screenH, 0.88f, 0.88f, 0.90f);
+
+        float memY = 85.0f;
+        for (int i = 0; i < chatList[activeChatIdx].members.size(); ++i) {
+            drawQuad(rX + 20, memY, 10, 10, 0.45f, 0.85f, 0.45f);
+            memY += 28.0f;
         }
     }
 };
 
 int main() {
     if (!glfwInit()) return -1;
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Vincere Native", NULL, NULL);
-    if (!window) return -1;
+    
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    
+    GLFWwindow* window = glfwCreateWindow(1280, 800, "Vincere Desktop", NULL, NULL);
+    if (!window) {
+        glfwTerminate();
+        return -1;
+    }
+    
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
     Vincere::CryptoEngine crypto;
-    VincereEngine engine;
+    VincereApp app;
 
     while (!glfwWindowShouldClose(window)) {
-        engine.update(window);
-        engine.render(window);
+        app.handleEvents(window);
+        app.render(window);
+        
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
 }
