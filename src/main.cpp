@@ -24,115 +24,95 @@ struct Message {
 
 struct Chat {
     std::string name;
+    std::string sub;
     std::vector<Message> messages;
     std::vector<std::string> members;
+    std::string admin;
 };
 
 class VincereEngine {
 public:
     std::map<char, Character> Characters;
-    float sbW = 260.0f;
-    float infoW = 180.0f;
+    float sbW = 280.0f;
+    float infoW = 200.0f;
     int sw, sh;
     int activeIdx = 0;
     bool isResizing = false;
-    double lastInput = 0;
     std::vector<Chat> chats;
+    std::string inputBuffer = "";
+    Vincere::CryptoEngine crypto;
 
-    VincereEngine() { setupData(); }
-
-    void setupData() {
-        Chat team = {"Vincere Team", {}, {"stk", "neo", "paul", "ivan", "wolf", "salt", "anton", "petra"}};
-        team.messages.push_back({"neo", "What we should do is having much more servers!", false, 0});
-        team.messages.push_back({"paul", "Agree. But there's one huge problem: We have no money.", false, 0});
-        team.messages.push_back({"stk", "Plan and show your result.", true, 0});
+    VincereEngine() {
+        Chat team = {"Vincere Team", "vincere-team", {}, {"neo", "paul", "ivan", "wolf", "salt", "anton", "petra"}, "stk"};
+        team.messages.push_back({"neo", "What we should do is having much more servers! Ours are overloaded.", false, 0});
+        team.messages.push_back({"paul", "Agree. But there's one huge problem: We don't have enough money.", false, 0});
+        team.messages.push_back({"stk", "So.. Don't talk. Plan and show your result.", true, 0});
         chats.push_back(team);
-        chats.push_back({"neo", {{"neo", "Are the keys safe?", false, 0}}, {"stk", "neo"}});
-        chats.push_back({"Public Room", {}, {"everyone"}});
-        chats.push_back({"Monero Fans", {}, {"xmr_king", "anon"}});
+        chats.push_back({"neo", "direct-message", {{"neo", "Are the keys safe?", false, 0}}, {"stk", "neo"}, "stk"});
+        chats.push_back({"Public Room", "public-chat", {}, {"everyone"}, "system"});
+        chats.push_back({"Monero Fans", "xmr-crypto", {}, {"anon", "whale"}, "stk"});
+        chats.push_back({"Dev Channel", "dev-vincere", {}, {"stk", "ivan"}, "ivan"});
+        chats.push_back({"Security Hub", "sec-ops", {}, {"wolf", "salt"}, "wolf"});
     }
 
     void initFonts() {
         FT_Library ft;
-        if (FT_Init_FreeType(&ft)) return;
+        FT_Init_FreeType(&ft);
         FT_Face face;
-        const char* fontPath = "/usr/share/fonts/TTF/DejaVuSans.ttf";
-        if (FT_New_Face(ft, fontPath, 0, &face)) return;
-        
+        FT_New_Face(ft, "/usr/share/fonts/TTF/DejaVuSans.ttf", 0, &face);
         FT_Set_Pixel_Sizes(face, 0, 14);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        
         for (unsigned char c = 0; c < 128; c++) {
-            if (FT_Load_Char(face, c, FT_LOAD_RENDER)) continue;
-            
+            FT_Load_Char(face, c, FT_LOAD_RENDER);
             unsigned int texture;
             glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_2D, texture);
-            
             unsigned char* buffer = new unsigned char[face->glyph->bitmap.width * face->glyph->bitmap.rows * 2];
             for(int i=0; i < face->glyph->bitmap.width * face->glyph->bitmap.rows; i++) {
                 buffer[i*2] = 255;
-                buffer[i*2+1] = face->glyph->bitmap.buffer[i]; 
+                buffer[i*2+1] = face->glyph->bitmap.buffer[i];
             }
-
             glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, face->glyph->bitmap.width, face->glyph->bitmap.rows, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, buffer);
             delete[] buffer;
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            Character character = { texture, (float)face->glyph->bitmap.width, (float)face->glyph->bitmap.rows, (float)face->glyph->bitmap_left, (float)face->glyph->bitmap_top, (unsigned int)face->glyph->advance.x };
-            Characters.insert(std::pair<char, Character>(c, character));
+            Characters[c] = { texture, (float)face->glyph->bitmap.width, (float)face->glyph->bitmap.rows, (float)face->glyph->bitmap_left, (float)face->glyph->bitmap_top, (unsigned int)face->glyph->advance.x };
         }
         FT_Done_Face(face);
         FT_Done_FreeType(ft);
-
-        for (auto& chat : chats) {
-            for (auto& msg : chat.messages) msg.cachedWidth = calculateTextWidth(msg.text);
-        }
+        for (auto& c : chats) for (auto& m : c.messages) m.cachedWidth = calculateTextWidth(m.text);
     }
 
     float calculateTextWidth(const std::string& text) {
-        float width = 0.0f;
-        for (char c : text) width += (Characters[c].Advance >> 6);
-        return width;
+        float w = 0.0f;
+        for (char c : text) w += (Characters[c].Advance >> 6);
+        return w;
     }
 
     void drawRect(float x, float y, float w, float h, float r, float g, float b, float a = 1.0f, bool fill = true) {
-        float nx = (2.0f * x) / sw - 1.0f;
-        float ny = 1.0f - (2.0f * y) / sh;
-        float nw = (2.0f * w) / sw;
-        float nh = (2.0f * h) / sh;
+        float nx = (2.0f * x) / sw - 1.0f, ny = 1.0f - (2.0f * y) / sh;
+        float nw = (2.0f * w) / sw, nh = (2.0f * h) / sh;
         glColor4f(r, g, b, a);
         glBegin(fill ? GL_QUADS : GL_LINE_LOOP);
-        glVertex2f(nx, ny); glVertex2f(nx + nw, ny);
-        glVertex2f(nx + nw, ny - nh); glVertex2f(nx, ny - nh);
+        glVertex2f(nx, ny); glVertex2f(nx + nw, ny); glVertex2f(nx + nw, ny - nh); glVertex2f(nx, ny - nh);
         glEnd();
     }
 
-    void drawText(const std::string& text, float x, float y, float r, float g, float b) {
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    void drawText(const std::string& text, float x, float y, float r, float g, float b, float scale = 1.0f) {
+        glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glColor3f(r, g, b);
-        float tX = (2.0f * x) / sw - 1.0f;
-        float tY = 1.0f - (2.0f * y) / sh;
+        float tX = (2.0f * x) / sw - 1.0f, tY = 1.0f - (2.0f * y) / sh;
         for (char c : text) {
             Character ch = Characters[c];
-            float xpos = tX + (ch.BearingX / sw) * 2.0f;
-            float ypos = tY - ((ch.SizeY - ch.BearingY) / sh) * 2.0f;
-            float w = (ch.SizeX / sw) * 2.0f;
-            float h = (ch.SizeY / sh) * 2.0f;
+            float xpos = tX + (ch.BearingX / sw) * 2.0f * scale;
+            float ypos = tY - ((ch.SizeY - ch.BearingY) / sh) * 2.0f * scale;
+            float w = (ch.SizeX / sw) * 2.0f * scale, h = (ch.SizeY / sh) * 2.0f * scale;
             glBindTexture(GL_TEXTURE_2D, ch.TextureID);
             glBegin(GL_QUADS);
-            glTexCoord2f(0, 0); glVertex2f(xpos, ypos + h);
-            glTexCoord2f(1, 0); glVertex2f(xpos + w, ypos + h);
-            glTexCoord2f(1, 1); glVertex2f(xpos + w, ypos);
-            glTexCoord2f(0, 1); glVertex2f(xpos, ypos);
+            glTexCoord2f(0, 0); glVertex2f(xpos, ypos + h); glTexCoord2f(1, 0); glVertex2f(xpos + w, ypos + h);
+            glTexCoord2f(1, 1); glVertex2f(xpos + w, ypos); glTexCoord2f(0, 1); glVertex2f(xpos, ypos);
             glEnd();
-            tX += (ch.Advance >> 6) * 2.0f / sw;
+            tX += (ch.Advance >> 6) * 2.0f / sw * scale;
         }
         glDisable(GL_TEXTURE_2D);
     }
@@ -141,86 +121,97 @@ public:
         glfwGetFramebufferSize(window, &sw, &sh);
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
-        bool over = (std::abs(mx - sbW) < 10.0);
+        bool over = (std::abs(mx - sbW) < 8.0);
         if (over || isResizing) glfwSetCursor(window, glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR));
         else glfwSetCursor(window, NULL);
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && over) isResizing = true;
         else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) isResizing = false;
-        if (isResizing) sbW = std::clamp((float)mx, 150.0f, 500.0f);
-        double now = glfwGetTime();
-        if (now - lastInput > 0.15) {
-            if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-                activeIdx = (activeIdx + 1) % chats.size();
-                lastInput = now;
-            }
-            if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-                activeIdx = (activeIdx - 1 + (int)chats.size()) % (int)chats.size();
-                lastInput = now;
-            }
-        }
+        if (isResizing) sbW = std::clamp((float)mx, 180.0f, 500.0f);
     }
 
     void render() {
         glViewport(0, 0, sw, sh);
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f); glClear(GL_COLOR_BUFFER_BIT);
         float chatW = sw - sbW - infoW;
 
-        drawRect(0, 0, sbW, sh, 0.96f, 0.96f, 0.98f);
-        drawRect(sbW, 0, 1, sh, 0.88f, 0.88f, 0.90f);
+        drawRect(0, 0, sbW, sh, 0.98f, 0.98f, 0.99f);
+        drawRect(sbW, 0, 1, sh, 0.1f, 0.1f, 0.1f);
 
+        std::string btns[] = {"Join public room", "create or join", "start chat"};
         for (int i = 0; i < 3; ++i) {
-            drawRect(20, 20 + i * 45, sbW - 40, 35, 0.4f, 0.4f, 0.45f, 1.0f, false);
-            drawText("Action Item", 35, 42 + i * 45, 0.4f, 0.4f, 0.45f);
+            drawRect(25, 25 + i * 45, sbW - 50, 35, 0.1f, 0.1f, 0.1f, 1.0f, false);
+            drawText(btns[i], 40, 48 + i * 45, 0.1f, 0.1f, 0.1f);
         }
 
-        float cY = 180;
+        drawText("Last conversations:", 25, 175, 0.2f, 0.2f, 0.2f);
+        float cY = 205;
         for (int i = 0; i < (int)chats.size(); ++i) {
-            if (i == activeIdx) drawRect(0, cY, sbW, 55, 0.0f, 0.4f, 0.9f, 0.08f);
-            drawText(chats[i].name, 50, cY + 32, 0.2f, 0.2f, 0.2f);
-            cY += 56;
+            if (i == activeIdx) drawRect(0, cY - 18, sbW, 45, 0.0f, 0.4f, 0.9f, 0.12f);
+            drawRect(25, cY, 15, 15, 0.2f, 0.2f, 0.2f, 1.0f, false);
+            drawText(chats[i].name, 55, cY + 12, 0.1f, 0.1f, 0.1f);
+            cY += 45;
         }
 
-        drawRect(sbW + 1, 0, chatW, 60, 1.0f, 1.0f, 1.0f);
-        drawRect(sbW + 1, 60, chatW, 1, 0.88f, 0.88f, 0.90f);
-        drawText(chats[activeIdx].name, sbW + 30, 38, 0.1f, 0.1f, 0.1f);
+        drawRect(sbW + 1, 0, chatW, 90, 1.0f, 1.0f, 1.0f);
+        drawRect(sbW + 30, 20, 50, 50, 0.1f, 0.1f, 0.1f, 1.0f, false);
+        drawText(chats[activeIdx].name, sbW + 100, 45, 0.1f, 0.1f, 0.1f, 1.4f);
+        drawText(chats[activeIdx].sub, sbW + 100, 68, 0.4f, 0.4f, 0.4f);
+        drawRect(sbW + 1, 90, chatW, 1, 0.1f, 0.1f, 0.1f);
 
-        float mY = 90;
+        float mY = 135;
         for (auto& m : chats[activeIdx].messages) {
-            float bW = m.cachedWidth + 30;
-            float bH = 45;
-            float mX = m.isSelf ? (sbW + chatW - bW - 25) : (sbW + 25);
-            drawRect(mX, mY, bW, bH, 0.88f, 0.88f, 0.92f, 1.0f, false);
-            drawText(m.text, mX + 15, mY + 28, 0.15f, 0.15f, 0.15f);
-            mY += bH + 15;
+            float bW = std::max(m.cachedWidth + 35.0f, 80.0f);
+            float bH = 55;
+            float mX = m.isSelf ? (sbW + chatW - bW - 40) : (sbW + 40);
+            drawText(m.sender, mX, mY - 12, 0.3f, 0.3f, 0.3f, 0.85f);
+            drawRect(mX, mY, bW, bH, 0.1f, 0.1f, 0.1f, 1.0f, false);
+            drawText(m.text, mX + 18, mY + 34, 0.1f, 0.1f, 0.1f);
+            mY += 95;
         }
 
-        drawRect(sbW + 20, sh - 60, chatW - 40, 40, 0.88f, 0.88f, 0.92f, 1.0f, false);
-        drawText("Write a message...", sbW + 35, sh - 35, 0.6f, 0.6f, 0.6f);
+        drawRect(sbW + 35, sh - 75, chatW - 70, 50, 0.1f, 0.1f, 0.1f, 1.0f, false);
+        std::string out = inputBuffer.empty() ? "Write a message..." : inputBuffer;
+        drawText(out, sbW + 55, sh - 42, 0.3f, 0.3f, 0.3f);
 
         float rX = sbW + chatW;
-        drawRect(rX, 0, infoW, sh, 0.99f, 0.99f, 1.0f);
-        drawRect(rX, 0, 1, sh, 0.88f, 0.88f, 0.90f);
-        drawText("PARTICIPANTS", rX + 20, 38, 0.5f, 0.5f, 0.6f);
-        float memY = 80;
+        drawRect(rX, 0, 1, sh, 0.1f, 0.1f, 0.1f);
+        drawText("Admin:", rX + 25, 45, 0.1f, 0.1f, 0.1f, 1.25f);
+        drawText(chats[activeIdx].admin, rX + 25, 75, 0.2f, 0.2f, 0.2f);
+        drawText("Online:", rX + 25, 140, 0.1f, 0.1f, 0.1f, 1.25f);
+        float memY = 175;
         for (auto& mem : chats[activeIdx].members) {
-            drawRect(rX + 20, memY, 10, 10, 0.5f, 0.8f, 0.5f);
-            drawText(mem, rX + 40, memY + 10, 0.3f, 0.3f, 0.3f);
-            memY += 28;
+            drawRect(rX + 25, memY - 10, 10, 10, 0.4f, 0.8f, 0.4f);
+            drawText(mem, rX + 45, memY, 0.2f, 0.2f, 0.2f);
+            memY += 32;
+        }
+    }
+
+    void handleKey(int key, int action) {
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            if (key == GLFW_KEY_BACKSPACE && !inputBuffer.empty()) inputBuffer.pop_back();
+            else if (key == GLFW_KEY_ENTER && !inputBuffer.empty()) {
+                chats[activeIdx].messages.push_back({"stk", inputBuffer, true, calculateTextWidth(inputBuffer)});
+                inputBuffer = "";
+            }
         }
     }
 };
 
+VincereEngine* gE = nullptr;
+void c_cb(GLFWwindow* w, unsigned int c) { if(c < 128) gE->inputBuffer += (char)c; }
+void k_cb(GLFWwindow* w, int k, int s, int a, int m) { gE->handleKey(k, a); }
+
 int main() {
-    if (!glfwInit()) return -1;
+    glfwInit();
     GLFWwindow* window = glfwCreateWindow(1280, 800, "Vincere Native", NULL, NULL);
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
-    VincereEngine engine;
-    engine.initFonts();
+    gE = new VincereEngine();
+    gE->initFonts();
+    glfwSetCharCallback(window, c_cb);
+    glfwSetKeyCallback(window, k_cb);
     while (!glfwWindowShouldClose(window)) {
-        engine.update(window);
-        engine.render();
+        gE->update(window);
+        gE->render();
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
