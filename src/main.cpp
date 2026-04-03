@@ -65,6 +65,10 @@ public:
         chats.push_back({"Infrastructure", {}, {"ops"}});
         chats.push_back({"Bug-Reports", {}, {"qa_team"}});
         chats.push_back({"General", {}, {"everyone"}});
+        chats.push_back({"Hardware-Talk", {}, {"stk", "wolf"}});
+        chats.push_back({"Coffee-Corner", {}, {"everyone"}});
+        chats.push_back({"Announcements", {}, {"admin"}});
+        chats.push_back({"Design-Review", {}, {"designers"}});
         chats.push_back({"Random", {}, {"everyone"}});
     }
 
@@ -72,7 +76,9 @@ public:
         FT_Library ft;
         if (FT_Init_FreeType(&ft)) return;
         FT_Face face;
-        if (FT_New_Face(ft, "/usr/share/fonts/TTF/DejaVuSans.ttf", 0, &face)) return;
+        if (FT_New_Face(ft, "/usr/share/fonts/TTF/DejaVuSans.ttf", 0, &face)) {
+            if (FT_New_Face(ft, "/usr/share/fonts/noto/NotoSans-Regular.ttf", 0, &face)) return;
+        }
         FT_Set_Pixel_Sizes(face, 0, 14);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         for (unsigned char c = 0; c < 128; c++) {
@@ -80,7 +86,7 @@ public:
             unsigned int texture;
             glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_2D, texture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, face->glyph->bitmap.width, face->glyph->bitmap.rows, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, face->glyph->bitmap.width, face->glyph->bitmap.rows, 0, GL_ALPHA, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -163,7 +169,7 @@ public:
         for(int i = 0; i < 4; ++i) {
             drawRect(20, 20 + i * 50, sbW - 40, 40, 0.96f, 0.96f, 0.98f);
             drawRect(20, 20 + i * 50, sbW - 40, 40, 0.85f, 0.85f, 0.88f, false);
-            drawText("Action Item", 35, 45 + i * 50, 0.5f, 0.5f, 0.6f);
+            drawText("Pinned Item", 35, 45 + i * 50, 0.5f, 0.5f, 0.6f);
         }
         float cY = 240;
         for(int i = 0; i < (int)chats.size(); ++i) {
